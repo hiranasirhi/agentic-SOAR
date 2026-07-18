@@ -1,0 +1,22 @@
+{
+  "192.168.1.10": {
+    "criticality": "critical",
+    "hostname": "domain-controller",
+    "department": "IT Infrastructure"
+  },
+  "192.168.1.20": {
+    "criticality": "high", 
+    "hostname": "file-server",
+    "department": "IT Infrastructure"
+  },
+  "192.168.1.30": {
+    "criticality": "medium",
+    "hostname": "workstation-1",
+    "department": "Finance"
+  },
+  "192.168.1.100": {
+    "criticality": "high",
+    "hostname": "linux-victim",
+    "department": "Engineering"
+  }
+}

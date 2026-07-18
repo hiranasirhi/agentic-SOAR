@@ -1,0 +1,4 @@
+kafka-python
+redis
+pydantic
+python-dotenv

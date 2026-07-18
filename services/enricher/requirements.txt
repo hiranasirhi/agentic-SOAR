@@ -1,0 +1,7 @@
+kafka-python
+redis
+pydantic
+python-dotenv
+requests
+maxminddb
+ldap3
