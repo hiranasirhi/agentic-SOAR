@@ -11,12 +11,19 @@ services:
     volumes:
       - zookeeper-data:/var/lib/zookeeper/data
     restart: unless-stopped
+    healthcheck:
+      test: echo ruok | nc localhost 2181 | grep imok
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 10s
 
   kafka:
     image: confluentinc/cp-kafka:7.4.0
     container_name: kafka
     depends_on:
-      - zookeeper
+      zookeeper:
+        condition: service_healthy
     ports:
       - "9092:9092"
     environment:
@@ -24,14 +31,11 @@ services:
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
       KAFKA_LISTENERS: INTERNAL://0.0.0.0:29092,EXTERNAL://0.0.0.0:9092
-      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:29092,EXTERNAL://host.docker.internal:9092
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:29092,EXTERNAL://100.71.186.0:9092
       KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_LOG_RETENTION_HOURS: 168
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
-      KAFKA_ZOOKEEPER_SESSION_TIMEOUT_MS: 6000
-      KAFKA_RESTART_ATTEMPTS: 10
-      KAFKA_RESTART_DELAY: 5
     volumes:
       - kafka-data:/var/lib/kafka/data
     restart: unless-stopped
@@ -46,18 +50,17 @@ services:
     image: confluentinc/cp-kafka:7.4.0
     container_name: kafka-init
     depends_on:
-      - kafka
+      kafka:
+        condition: service_healthy
     entrypoint: ["/bin/sh", "-c"]
     command: |
-      echo "Waiting for Kafka to be ready..."
-      cub kafka-ready -b kafka:29092 1 30
-      echo "Creating topics..."
+      echo "Creating Kafka topics..."
       kafka-topics --create --if-not-exists --bootstrap-server kafka:29092 --topic raw-alerts --partitions 1 --replication-factor 1
       kafka-topics --create --if-not-exists --bootstrap-server kafka:29092 --topic normalized-events --partitions 1 --replication-factor 1
       kafka-topics --create --if-not-exists --bootstrap-server kafka:29092 --topic enriched-events --partitions 1 --replication-factor 1
       kafka-topics --create --if-not-exists --bootstrap-server kafka:29092 --topic incidents --partitions 1 --replication-factor 1
       kafka-topics --create --if-not-exists --bootstrap-server kafka:29092 --topic failed-events --partitions 1 --replication-factor 1
-      echo "Topics created successfully"
+      echo "All topics created"
       kafka-topics --list --bootstrap-server kafka:29092
 
   redis:
@@ -69,6 +72,11 @@ services:
     volumes:
       - redis-data:/data
     restart: unless-stopped
+    healthcheck:
+      test: redis-cli ping
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   postgres:
     image: postgres:15-alpine
@@ -83,6 +91,11 @@ services:
       - postgres-data:/var/lib/postgresql/data
       - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
     restart: unless-stopped
+    healthcheck:
+      test: pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   normalizer:
     build:
@@ -90,8 +103,10 @@ services:
       dockerfile: Dockerfile
     container_name: normalizer
     depends_on:
-      - kafka
-      - redis
+      kafka:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     env_file:
       - .env
     volumes:
@@ -105,8 +120,10 @@ services:
       dockerfile: Dockerfile
     container_name: enricher
     depends_on:
-      - kafka
-      - redis
+      kafka:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     env_file:
       - .env
     volumes:
@@ -114,6 +131,23 @@ services:
       - ./services/enricher:/app
       - ./services/enricher/mitre_map.json:/app/mitre_map.json
       - ./services/enricher/assets.json:/app/assets.json
+    restart: unless-stopped
+
+  dlq-handler:
+    build:
+      context: ./services/dlq_handler
+      dockerfile: Dockerfile
+    container_name: dlq-handler
+    depends_on:
+      kafka:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    env_file:
+      - .env
+    volumes:
+      - ./shared:/app/shared
+      - ./services/dlq_handler:/app
     restart: unless-stopped
 
 volumes:
