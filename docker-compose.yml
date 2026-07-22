@@ -8,14 +8,13 @@ services:
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
-    volumes:
-      - zookeeper-data:/var/lib/zookeeper/data
+      ZOOKEEPER_LOG4J_ROOT_LOGLEVEL: WARN
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "bash", "-c", "echo ruok | timeout 2 nc localhost 2181 || exit 1"]
-      interval: 30s
+      test: ["CMD", "bash", "-c", "cub zk-ready localhost:2181 10 2>/dev/null && echo healthy || exit 1"]
+      interval: 15s
       timeout: 10s
-      retries: 5
+      retries: 10
       start_period: 20s
 
   kafka:
@@ -35,16 +34,15 @@ services:
       KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_LOG_RETENTION_HOURS: 168
-      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
-    volumes:
-      - kafka-data:/var/lib/kafka/data
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_LOG4J_ROOT_LOGLEVEL: WARN
     restart: unless-stopped
     healthcheck:
-      test: kafka-topics --bootstrap-server kafka:29092 --list
-      interval: 30s
+      test: ["CMD", "bash", "-c", "kafka-topics --bootstrap-server kafka:29092 --list > /dev/null 2>&1"]
+      interval: 15s
       timeout: 10s
-      retries: 5
-      start_period: 30s
+      retries: 10
+      start_period: 40s
 
   kafka-init:
     image: confluentinc/cp-kafka:7.4.0
@@ -52,18 +50,19 @@ services:
     depends_on:
       kafka:
         condition: service_healthy
-    entrypoint: ["/bin/bash", "-c"]
-    command: |
-      echo "Waiting for Kafka to be fully ready..."
-      cub kafka-ready -b kafka:29092 1 60
-      echo "Kafka is ready. Creating topics..."
-      kafka-topics --create --if-not-exists --bootstrap-server kafka:29092 --topic raw-alerts --partitions 1 --replication-factor 1
-      kafka-topics --create --if-not-exists --bootstrap-server kafka:29092 --topic normalized-events --partitions 1 --replication-factor 1
-      kafka-topics --create --if-not-exists --bootstrap-server kafka:29092 --topic enriched-events --partitions 1 --replication-factor 1
-      kafka-topics --create --if-not-exists --bootstrap-server kafka:29092 --topic incidents --partitions 1 --replication-factor 1
-      kafka-topics --create --if-not-exists --bootstrap-server kafka:29092 --topic failed-events --partitions 1 --replication-factor 1
-      echo "All topics created successfully."
-      kafka-topics --list --bootstrap-server kafka:29092
+    entrypoint: "/bin/bash"
+    command:
+      - "-c"
+      - |
+        sleep 20
+        kafka-topics --create --if-not-exists --bootstrap-server kafka:29092 --topic raw-alerts --partitions 1 --replication-factor 1
+        kafka-topics --create --if-not-exists --bootstrap-server kafka:29092 --topic normalized-events --partitions 1 --replication-factor 1
+        kafka-topics --create --if-not-exists --bootstrap-server kafka:29092 --topic enriched-events --partitions 1 --replication-factor 1
+        kafka-topics --create --if-not-exists --bootstrap-server kafka:29092 --topic incidents --partitions 1 --replication-factor 1
+        kafka-topics --create --if-not-exists --bootstrap-server kafka:29092 --topic failed-events --partitions 1 --replication-factor 1
+        echo "All topics:"
+        kafka-topics --list --bootstrap-server kafka:29092
+    restart: "no"
 
   redis:
     image: redis:7.2-alpine
@@ -153,7 +152,5 @@ services:
     restart: unless-stopped
 
 volumes:
-  zookeeper-data:
-  kafka-data:
   redis-data:
   postgres-data:
