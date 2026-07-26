@@ -29,3 +29,8 @@ AGENT_HEARTBEAT_TTL = 30        # seconds
 AGENT_HEARTBEAT_INTERVAL = 10   # seconds
 DEDUP_WINDOW = 60               # seconds
 KAFKA_POLL_INTERVAL = 10        # seconds
+
+# Detection Engine
+REDIS_CORRELATION_PREFIX = "correlation:"   # correlation:{source_ip}
+CORRELATION_WINDOW = 900                     # 15 min kill-chain window
+ANOMALY_THRESHOLD = -0.1                     # isolation forest decision_function cutoff
