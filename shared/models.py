@@ -25,6 +25,16 @@ class IncidentEvent(BaseModel):
     raw_log: Dict[str, Any]
     tags: List[str] = []
 
+class Incident(IncidentEvent):
+    incident_id: str
+    correlation_id: Optional[str] = None
+    kill_chain_stages: List[str] = []
+    anomaly_score: Optional[float] = None
+    is_anomaly: bool = False
+    composite_severity: int
+    correlated_event_ids: List[str] = []
+    fp_discount_applied: int = 0
+    
 class TaskPlan(BaseModel):
     incident_id: str
     agent_sequence: List[str]
