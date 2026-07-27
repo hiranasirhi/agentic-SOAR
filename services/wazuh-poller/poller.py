@@ -1,22 +1,24 @@
 import json
 import time
+import os
 import requests
 import urllib3
 from kafka import KafkaProducer
 from requests.auth import HTTPBasicAuth
 
+from shared.constants import TOPIC_RAW_ALERTS, KAFKA_POLL_INTERVAL
+
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # ---------------- Configuration ----------------
 
-KAFKA_SERVERS = "100.71.186.0:9092"
+KAFKA_SERVERS = os.environ.get("KAFKA_SERVERS", "100.71.186.0:9092")
 
-WAZUH_INDEXER_URL = "https://100.98.120.36:9200"
+WAZUH_INDEXER_URL = os.environ.get("WAZUH_INDEXER_URL", "https://100.98.120.36:9200")
 
-WAZUH_USERNAME = "admin"
-WAZUH_PASSWORD = "I5jDD4NyQYR2us3b4sC3n.WkBT6TjPx9"
+WAZUH_USERNAME = os.environ["WAZUH_USERNAME"]
+WAZUH_PASSWORD = os.environ["WAZUH_PASSWORD"]
 
-POLL_INTERVAL = 10
 LAST_TIMESTAMP_FILE = "last_poll_timestamp.txt"
 
 # ---------------- Kafka Producer ----------------
@@ -72,13 +74,13 @@ def poll_alerts():
 
         if hits:
             for hit in hits:
-                producer.send("raw-alerts", hit["_source"])
+                producer.send(TOPIC_RAW_ALERTS, hit["_source"])
 
             producer.flush()
 
             save_timestamp(hits[-1]["_source"]["@timestamp"])
 
-            print(f"Sent {len(hits)} alerts to Kafka.")
+            print(f"Sent {len(hits)} alerts to Kafka topic '{TOPIC_RAW_ALERTS}'.")
 
         else:
             print("No new alerts.")
@@ -92,4 +94,4 @@ print(f"Wazuh Poller started — Kafka: {KAFKA_SERVERS}")
 
 while True:
     poll_alerts()
-    time.sleep(POLL_INTERVAL)
+    time.sleep(KAFKA_POLL_INTERVAL)
