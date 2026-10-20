@@ -1,0 +1,55 @@
+x-agent-build: &agent-build
+  context: .
+  dockerfile: services/agents/Dockerfile
+
+services:
+
+  triage:
+    build: *agent-build
+    container_name: protego-triage
+    env_file:
+      - .env
+    command: python -m agents.triage_agent
+    restart: unless-stopped
+
+  investigation:
+    build: *agent-build
+    container_name: protego-investigation
+    env_file:
+      - .env
+    command: python -m agents.investigation_agent
+    restart: unless-stopped
+
+  response:
+    build: *agent-build
+    container_name: protego-response
+    env_file:
+      - .env
+    command: python -m agents.response_agent
+    restart: unless-stopped
+
+  containment:
+    build: *agent-build
+    container_name: protego-containment
+    env_file:
+      - .env
+    command: python -m agents.containment_agent
+    restart: unless-stopped
+
+  notification:
+    build: *agent-build
+    container_name: protego-notification
+    env_file:
+      - .env
+    command: python -m agents.notification_agent
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  learning:
+    build: *agent-build
+    container_name: protego-learning
+    env_file:
+      - .env
+    command: python -m agents.learning_agent
+    restart: unless-stopped
