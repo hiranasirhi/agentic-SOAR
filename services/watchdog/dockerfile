@@ -1,0 +1,6 @@
+FROM python:3.11-slim
+WORKDIR /app
+COPY services/watchdog/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+COPY services/watchdog/watchdog.py /app/watchdog.py
+CMD ["python", "watchdog.py"]
