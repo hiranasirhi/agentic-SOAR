@@ -9,6 +9,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import sys
+sys.stdout.reconfigure(line_buffering=True)
+
 sys.path.append('/app')
 from shared.models import IncidentEvent
 from shared.constants import TOPIC_NORMALIZED, TOPIC_ENRICHED
@@ -32,41 +34,38 @@ r = redis.Redis(
     decode_responses=True
 )
 
-# MITRE technique to tactic mapping
-MITRE_MAP = {
-    'T1110': {'technique': 'T1110', 'tactic': 'Credential Access', 'name': 'Brute Force'},
-    'T1046': {'technique': 'T1046', 'tactic': 'Discovery', 'name': 'Network Service Scanning'},
-    'T1059': {'technique': 'T1059', 'tactic': 'Execution', 'name': 'Command and Scripting Interpreter'},
-    'T1068': {'technique': 'T1068', 'tactic': 'Privilege Escalation', 'name': 'Exploitation for Privilege Escalation'},
-    'T1021': {'technique': 'T1021', 'tactic': 'Lateral Movement', 'name': 'Remote Services'},
-    'T1565': {'technique': 'T1565', 'tactic': 'Impact', 'name': 'Data Manipulation'},
-    'T1003': {'technique': 'T1003', 'tactic': 'Credential Access', 'name': 'OS Credential Dumping'},
-    'T1041': {'technique': 'T1041', 'tactic': 'Exfiltration', 'name': 'Exfiltration Over C2 Channel'},
-}
+# --- Load MITRE keyword map and asset inventory from file instead of hardcoding ---
+with open('/app/mitre_map.json') as f:
+    MITRE_KEYWORD_MAP = json.load(f)   # {"brute": "T1110", "scan": "T1046", ...}
 
-# Asset criticality mapping
-ASSETS = {
-    '192.168.1.10': 'critical',
-    '192.168.1.20': 'high',
+with open('/app/assets.json') as f:
+    ASSETS = json.load(f)              # {"192.168.1.10": {"criticality": ..., "hostname": ..., "department": ...}}
+
+MITRE_TACTICS = {
+    'T1110': 'Credential Access',
+    'T1046': 'Discovery',
+    'T1068': 'Privilege Escalation',
+    'T1059': 'Execution',
+    'T1059.001': 'Execution',
+    'T1021': 'Lateral Movement',
+    'T1041': 'Exfiltration',
+    'T1003': 'Credential Access',
+    'T1565': 'Impact',
+    'T1053': 'Persistence',
 }
 
 def get_mitre_mapping(rule_description: str) -> dict:
-    """Match rule description to MITRE technique"""
+    """Best-effort keyword tag from rule description.
+    This is only a hint — Detection Engine re-derives the authoritative
+    technique from rule_id in Phase 3, so this doesn't need to be exhaustive."""
     desc_lower = rule_description.lower()
-    
-    if 'brute' in desc_lower or 'authentication failed' in desc_lower:
-        return MITRE_MAP['T1110']
-    elif 'scan' in desc_lower or 'port' in desc_lower:
-        return MITRE_MAP['T1046']
-    elif 'privilege' in desc_lower or 'sudo' in desc_lower:
-        return MITRE_MAP['T1068']
-    elif 'shell' in desc_lower or 'command' in desc_lower:
-        return MITRE_MAP['T1059']
-    
+    for keyword, technique in MITRE_KEYWORD_MAP.items():
+        if keyword in desc_lower:
+            return {'technique': technique, 'tactic': MITRE_TACTICS.get(technique)}
     return {}
 
-def get_asset_criticality(ip: str) -> str:
-    return ASSETS.get(ip, 'low')
+def get_asset_info(ip: str) -> dict:
+    return ASSETS.get(ip, {'criticality': 'low', 'hostname': None, 'department': None})
 
 def get_geo(ip: str) -> dict:
     """Simple GeoIP using free API — replace with MaxMind offline later"""
@@ -95,17 +94,30 @@ for message in consumer:
     try:
         mitre = get_mitre_mapping(event_dict.get('rule_description', ''))
         geo = get_geo(event_dict.get('source_ip', ''))
+        asset = get_asset_info(event_dict.get('source_ip', ''))
         
         event_dict['mitre_technique'] = mitre.get('technique')
         event_dict['mitre_tactic'] = mitre.get('tactic')
-        event_dict['asset_criticality'] = get_asset_criticality(
-            event_dict.get('source_ip', '')
-        )
+
+        if asset.get('criticality'):
+            event_dict['asset_criticality'] = asset['criticality']
+        # else: keep normalizer's existing value instead of overwriting
+
+        if not event_dict.get('hostname'):
+            event_dict['hostname'] = asset.get('hostname')
+        if not event_dict.get('user_department'):
+            event_dict['user_department'] = asset.get('department')
+
         event_dict['geo_country'] = geo.get('geo_country')
         event_dict['geo_city'] = geo.get('geo_city')
         
         producer.send(TOPIC_ENRICHED, event_dict)
-        print(f"Enriched: {event_dict.get('source_ip')} → {mitre.get('tactic', 'Unknown tactic')}")
-        
+        print(
+            f"Enriched:"
+            f" rule={event_dict.get('rule_id')}"
+            f" desc={event_dict.get('rule_description')}"
+            f" mitre={event_dict.get('mitre_technique')}"
+        )        
+
     except Exception as e:
         print(f"Enrichment error: {e}")

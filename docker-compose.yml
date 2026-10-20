@@ -65,11 +65,12 @@ services:
     restart: "no"
 
   redis:
-    image: redis:7.2-alpine
+    image: redis/redis-stack-server:latest
     container_name: redis
     ports:
       - "6379:6379"
-    command: redis-server --appendonly yes
+    environment:
+      - REDIS_ARGS=--appendonly yes
     volumes:
       - redis-data:/data
     restart: unless-stopped
@@ -150,6 +151,106 @@ services:
       - ./shared:/app/shared
       - ./services/dlq_handler:/app
     restart: unless-stopped
+
+  detection-engine:
+    build:
+      context: ./services/detection-engine
+      dockerfile: dockerfile
+    container_name: detection-engine
+    depends_on:
+      kafka:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file:
+      - .env
+    volumes:
+      - ./shared:/app/shared
+      - ./services/detection-engine:/app
+    restart: unless-stopped
+
+  watchdog:
+   build:
+    context: .
+    dockerfile: ./services/watchdog/Dockerfile
+   container_name: watchdog
+   depends_on:
+    redis:
+      condition: service_healthy
+    postgres:
+      condition: service_healthy
+   env_file:
+    - .env
+   volumes:
+    - ./shared:/app/shared
+    - /var/run/docker.sock:/var/run/docker.sock
+    - ./secrets/watchdog_id_ed25519:/app/ssh/watchdog_id_ed25519:ro
+   restart: unless-stopped
+   environment:
+      - SSH_KEY_PATH=/app/ssh/watchdog_id_ed25519
+
+  verification:
+    build: ./services/verification
+    env_file: .env
+    depends_on:
+      - redis
+      - postgres
+
+  dashboard_api:
+   build: ./services/dashboard_api
+   env_file: .env
+   ports:
+    - "8001:8001"
+   volumes:
+    - ./shared:/app/shared
+   depends_on:
+    - redis
+    - postgres
+
+  pipeline-monitor:
+    build: ./services/pipeline-monitor
+    container_name: pipeline-monitor
+    restart: unless-stopped
+    depends_on: [kafka]
+    environment:
+      - PYTHONUNBUFFERED=1
+      - KAFKA_BROKER=kafka:29092
+      - TOPIC_GROUP_PAIRS=raw-alerts:normalizer-group,normalized-events:enricher-group,enriched-events:detection-engine-group,failed-events:dlq-handler-group
+      - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL}
+      - LAG_THRESHOLD=100
+
+  evaluation:
+    build: ./tools/evaluation
+    profiles: ["tools"]
+    environment:
+      - ORCHESTRATOR_HOST=100.82.97.75
+      - ORCHESTRATOR_SSH_USER=h pp
+      - ORCHESTRATOR_CONTAINER=protego-orchestrator
+      - SSH_KEY_PATH=/app/ssh/watchdog_id_ed25519
+      - AGENTS_HOST=100.103.120.48
+      - AGENTS_SSH_USER=HP
+      - POSTGRES_DSN=dbname=soar_db user=soar_user password=soar_password123 host=postgres port=5432
+    volumes:
+      - ./secrets/watchdog_id_ed25519:/app/ssh/watchdog_id_ed25519:ro
+      - ./tools/evaluation/results:/results
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      - redis
+      - postgres
+
+  baseline-dispatcher:
+    build: ./tools/baseline-dispatcher
+    profiles: ["tools"]
+    depends_on: [redis, postgres]
+
+  es-init:
+    image: curlimages/curl:latest
+    profiles: ["tools"]
+    volumes:
+      - ./tools/elasticsearch/ilm-policies.sh:/ilm-policies.sh
+    entrypoint: ["/bin/sh", "/ilm-policies.sh"]
+    environment:
+      - ES_URL=${ELASTICSEARCH_URL}
 
 volumes:
   redis-data:

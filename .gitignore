@@ -1,20 +1,41 @@
+# secrets
 .env
+*.env
+!.env.example
+secrets/
+*id_ed25519*
+*.pem
+*.key
+
+# python / envs
+venv/
+.venv/
 __pycache__/
 *.pyc
-*.pyo
-*.pyd
-.Python
 *.egg-info/
-.eggs/
-dist/
-build/
+
+# data, models, backups
+chromadb_store*/
+chroma_db/
+*.sqlite3
+*.pkl
+*.zip
+*.tar.gz
 *.log
-.DS_Store
-Thumbs.db
-*.iml
-.idea/
-.vscode/
+*.backup_*
+last_poll_timestamp.txt
+file-structure.txt
+tools/evaluation/results/
+services/detection-engine/training/cicids2017/
+
+# docker volumes
 kafka-data/
 zookeeper-data/
 postgres-data/
 redis-data/
+
+# os/ide
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

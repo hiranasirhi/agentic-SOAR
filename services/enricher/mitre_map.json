@@ -21,5 +21,6 @@
   "tamper": "T1565",
   "integrity": "T1565",
   "persistence": "T1053",
-  "scheduled": "T1053"
+  "scheduled": "T1053",
+  "PAM: Login session opened": "5501"
 }

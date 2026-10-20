@@ -1,0 +1,7 @@
+kafka-python
+redis
+pydantic
+python-dotenv
+scikit-learn
+joblib
+numpy

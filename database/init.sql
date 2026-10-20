@@ -75,3 +75,69 @@ CREATE TABLE IF NOT EXISTS healing_events (
     recovery_time_seconds FLOAT,
     recovered_at TIMESTAMP DEFAULT NOW()
 );
+
+CREATE TABLE IF NOT EXISTS expected_state (
+    id SERIAL PRIMARY KEY,
+    incident_id TEXT NOT NULL,
+    check_type TEXT NOT NULL,          -- 'ufw_rule' | 'inter_vm_ping' | 'ldap_account'
+    target TEXT NOT NULL,              -- VM name or username
+    expected_value JSONB NOT NULL,     -- e.g. {"rule": "deny from 1.2.3.4"}
+    created_at TIMESTAMP DEFAULT NOW(),
+    verified_at TIMESTAMP,
+    last_check_ok BOOLEAN,
+    last_check_reason TEXT
+);
+
+-- Run this once against the existing PostgreSQL instance (same DB as healing_events, expected_state).
+-- psql -h <postgres-host> -U <user> -d <db> -f evaluation_schema.sql
+
+CREATE TABLE IF NOT EXISTS evaluation_runs (
+    id SERIAL PRIMARY KEY,
+    run_batch_id TEXT NOT NULL,          -- groups one full pass (all 12 scenarios, one mode) together
+    mode TEXT NOT NULL,                  -- 'full' | 'baseline'
+    scenario_id TEXT NOT NULL,           -- matches scenarios.py SCENARIOS[].id
+    environment TEXT NOT NULL,           -- 'linux' | 'windows'
+    expected_technique TEXT NOT NULL,    -- ground truth, e.g. 'T1110'
+    attack_fired_at TIMESTAMP NOT NULL,
+    incident_id TEXT,
+    incident_detected_at TIMESTAMP,
+    detected_technique TEXT,
+    mttd_seconds FLOAT,
+    response_completed_at TIMESTAMP,
+    mttr_seconds FLOAT,
+    outcome TEXT NOT NULL,               -- 'detected' | 'missed' | 'wrong_technique' | 'error'
+    raw_result JSONB,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_eval_runs_batch ON evaluation_runs (run_batch_id);
+CREATE INDEX IF NOT EXISTS idx_eval_runs_mode ON evaluation_runs (mode);
+
+CREATE TABLE IF NOT EXISTS baseline_dispatch_log (
+    id SERIAL PRIMARY KEY,
+    incident_id TEXT NOT NULL,
+    technique TEXT,
+    agent TEXT NOT NULL,
+    action TEXT NOT NULL,
+    dispatched_at TIMESTAMP DEFAULT NOW()
+);
+
+-- NOTE: healing_events already exists (created by the Watchdog component) with this shape —
+-- included here ONLY as a reference so measure_self_healing.py's query makes sense.
+-- Do NOT re-run this if it already exists; IF NOT EXISTS makes it a no-op either way.
+CREATE TABLE IF NOT EXISTS healing_events (
+    id SERIAL PRIMARY KEY,
+    agent_name VARCHAR(100),
+    event_type VARCHAR(100),
+    docker_exit_code INTEGER,
+    log_summary TEXT,
+    recovery_time_seconds FLOAT,
+    recovered_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS postmortems (
+    id SERIAL PRIMARY KEY,
+    incident_id TEXT UNIQUE NOT NULL,
+    report TEXT,
+    created_at TIMESTAMP DEFAULT NOW()
+);
